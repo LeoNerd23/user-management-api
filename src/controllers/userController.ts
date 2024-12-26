@@ -4,11 +4,42 @@ import User from '../models/User';
 import { sendEmail } from '../services/emailService';
 import mongoose from 'mongoose';
 
+/**
+ * Creates a new user with the provided details.
+ * 
+ * Validates the input (name, email, and password formats) and ensures the email is unique.
+ * Hashes the password, generates a verification code, and sends an email for verification.
+ * 
+ * @param {Request} req - Express request object containing user details in the body
+ * @param {Response} res - Express response object for sending back the status and messages
+ * @returns {Promise<void>} - Returns a JSON response indicating success or failure
+ */
 export const createUser = async (req: Request, res: Response): Promise<void> => {
-  const { firstName, lastName, email, password, age, role } = req.body;
+  const { firstName, lastName, email, password } = req.body;
 
   try {
-    console.log('Received data:', { firstName, lastName, email, password, age, role });
+    const nameRegex = /^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$/;
+    if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
+      res.status(400).json({ error: 'First and Last names can only contain letters and spaces' });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      res.status(400).json({ error: 'Invalid email format' });
+      return;
+    }
+
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{6,}$/;
+    if (!passwordRegex.test(password)) {
+      res.status(400).json({
+        error:
+          'Password must be at least 6 characters long, contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+      });
+      return;
+    }
+
+    console.log('Received data:', { firstName, lastName, email, password });
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -26,8 +57,6 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       lastName,
       email,
       password: hashedPassword,
-      age,
-      role,
       verificationCode,
       isVerified: false,
     });
@@ -44,29 +73,158 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
   }
 };
 
+/**
+ * Verifies a user with the provided user ID and verification code.
+ * 
+ * Checks if the user exists, validates the verification code, and marks the user as verified.
+ * 
+ * @param {Request} req - Express request object containing user ID and verification code in the body
+ * @param {Response} res - Express response object for sending back the status and messages
+ * @param {NextFunction} next - Express next middleware function
+ * @returns {Promise<void>} - Returns a JSON response indicating success or failure
+ */
 export const verifyUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const { userId, verificationCode } = req.body;
 
   try {
-    const user = await User.findById(new mongoose.Types.ObjectId(userId));
+    // Valida o formato do ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      res.status(400).json({ error: 'Invalid user ID format' });
+      return;
+    }
+
+    // Busca o usuário pelo ID
+    const user = await User.findById(userId);
 
     if (!user) {
-      console.log('user', user)
       res.status(404).json({ error: 'User not found' });
       return;
     }
 
+    // Valida o código de verificação
     if (user.verificationCode !== verificationCode) {
       res.status(400).json({ error: 'Invalid verification code' });
       return;
     }
 
+    // Marca o usuário como verificado e remove o verificationCode
     user.isVerified = true;
+    user.verificationCode = undefined; // Remove o campo verificationCode
     await user.save();
 
+    res.status(200).json({ message: 'User verified successfully' });
     next();
   } catch (error) {
     console.error('Error verifying user:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * Retrieves a user by their ID.
+ * 
+ * Validates the ID format and checks if the user exists in the database.
+ * 
+ * @param {Request} req - Express request object containing the user ID as a URL parameter
+ * @param {Response} res - Express response object for sending back the user data or error messages
+ * @returns {Promise<void>} - Returns a JSON response with the user data or an error
+ */
+export const getUserById = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      res.status(400).json({ error: 'Invalid user ID format' });
+      return;
+    }
+
+    const user = await User.findById(id).select('-password');
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    res.status(200).json(user);
+  } catch (error) {
+    console.error('Error retrieving user by ID:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * Deletes a user by their ID.
+ * Validates the ID format and removes the user if they exist in the database.
+ * @param {Request} req - Express request object containing the user ID as a URL parameter
+ * @param {Response} res - Express response object for sending back the status and messages
+ * @returns {Promise<void>} - Returns a JSON response indicating success or failure
+ */
+export const deleteUserById = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      res.status(400).json({ error: 'Invalid user ID format' });
+      return;
+    }
+
+    const user = await User.findByIdAndDelete(id);
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    res.status(200).json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting user by ID:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * Updates the firstName and lastName of a user by their ID.
+ * 
+ * Validates the ID format and the name fields using regex before updating the user.
+ * 
+ * @param {Request} req - Express request object containing the user ID as a URL parameter and updated names in the body
+ * @param {Response} res - Express response object for sending back the status and messages
+ * @returns {Promise<void>} - Returns a JSON response indicating success or failure
+ */
+export const updateUserById = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { firstName, lastName } = req.body;
+
+  try {
+    // Validate the ID format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      res.status(400).json({ error: 'Invalid user ID format' });
+      return;
+    }
+
+    // Validate the names using regex
+    const nameRegex = /^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$/;
+    if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
+      res.status(400).json({ error: 'First and Last names can only contain letters and spaces' });
+      return;
+    }
+
+    // Find and update the user
+    const user = await User.findByIdAndUpdate(
+      id,
+      { firstName, lastName },
+      { new: true, runValidators: true }
+    );
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    // Return the updated user
+    res.status(200).json({ message: 'User updated successfully', user });
+  } catch (error) {
+    console.error('Error updating user name by ID:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
