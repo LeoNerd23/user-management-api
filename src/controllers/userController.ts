@@ -87,13 +87,11 @@ export const verifyUser = async (req: Request, res: Response, next: NextFunction
   const { userId, verificationCode } = req.body;
 
   try {
-    // Valida o formato do ID
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       res.status(400).json({ error: 'Invalid user ID format' });
       return;
     }
 
-    // Busca o usuário pelo ID
     const user = await User.findById(userId);
 
     if (!user) {
@@ -101,15 +99,13 @@ export const verifyUser = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // Valida o código de verificação
     if (user.verificationCode !== verificationCode) {
       res.status(400).json({ error: 'Invalid verification code' });
       return;
     }
 
-    // Marca o usuário como verificado e remove o verificationCode
     user.isVerified = true;
-    user.verificationCode = undefined; // Remove o campo verificationCode
+    user.verificationCode = undefined;
     await user.save();
 
     res.status(200).json({ message: 'User verified successfully' });
@@ -196,20 +192,17 @@ export const updateUserById = async (req: Request, res: Response): Promise<void>
   const { firstName, lastName } = req.body;
 
   try {
-    // Validate the ID format
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({ error: 'Invalid user ID format' });
       return;
     }
 
-    // Validate the names using regex
     const nameRegex = /^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$/;
     if (!nameRegex.test(firstName) || !nameRegex.test(lastName)) {
       res.status(400).json({ error: 'First and Last names can only contain letters and spaces' });
       return;
     }
 
-    // Find and update the user
     const user = await User.findByIdAndUpdate(
       id,
       { firstName, lastName },
@@ -221,7 +214,6 @@ export const updateUserById = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Return the updated user
     res.status(200).json({ message: 'User updated successfully', user });
   } catch (error) {
     console.error('Error updating user name by ID:', error);
