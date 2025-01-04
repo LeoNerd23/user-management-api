@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import User from '../models/User';
 import { sendEmail } from '../services/emailService';
@@ -217,6 +218,53 @@ export const updateUserById = async (req: Request, res: Response): Promise<void>
     res.status(200).json({ message: 'User updated successfully', user });
   } catch (error) {
     console.error('Error updating user name by ID:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * Handles user login by verifying email and password.
+ * Generates a JWT token if the credentials are valid.
+ * @param {Request} req - Express request object containing email and password in the body
+ * @param {Response} res - Express response object for sending back the status and messages
+ * @returns {Promise<void>} - Returns a JSON response indicating success or failure
+ */
+export const loginUser = async (req: Request, res: Response): Promise<void> => {
+  const { email, password } = req.body;
+
+  try {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      res.status(400).json({ error: 'Invalid email format' });
+      return;
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      res.status(401).json({ error: 'Invalid password' });
+      return;
+    }
+
+    if (!user.isVerified) {
+      res.status(403).json({ error: 'User is not verified. Please verify your account.' });
+      return;
+    }
+
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      process.env.JWT_SECRET || 'your_jwt_secret', // Use a secure secret in production
+      { expiresIn: '1h' }
+    );
+
+    res.status(200).json({ message: 'Login successful', token });
+  } catch (error) {
+    console.error('Error logging in user:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

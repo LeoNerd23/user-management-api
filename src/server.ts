@@ -18,7 +18,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Roteador de usuários
-app.use('/users', userRoutes);
+app.use('/', userRoutes);
 
 // Rota de teste
 app.get('/', (req: Request, res: Response) => {
@@ -26,7 +26,7 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 // Porta do servidor
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3333;
 
 // Inicia o servidor
 app.listen(port, () => {
