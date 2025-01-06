@@ -142,7 +142,13 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    res.status(200).json(user);
+    res.status(200).json({
+      _id: user._id,
+      isVerified: user.isVerified,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    });
   } catch (error) {
     console.error('Error retrieving user by ID:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -224,7 +230,8 @@ export const updateUserById = async (req: Request, res: Response): Promise<void>
 
 /**
  * Handles user login by verifying email and password.
- * Generates a JWT token if the credentials are valid.
+ * Generates a JWT token if the credentials are valid and the user is verified.
+ * If the user is not verified, sends the verification email again.
  * @param {Request} req - Express request object containing email and password in the body
  * @param {Response} res - Express response object for sending back the status and messages
  * @returns {Promise<void>} - Returns a JSON response indicating success or failure
@@ -252,17 +259,30 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
     }
 
     if (!user.isVerified) {
-      res.status(403).json({ error: 'User is not verified. Please verify your account.' });
+      const newVerificationCode = Math.floor(100000 + Math.random() * 900000);
+      user.verificationCode = newVerificationCode;
+      await user.save();
+
+      await sendEmail(
+        user.email,
+        'Confirm Your Registration',
+        `Your new verification code is ${newVerificationCode}`
+      );
+
+      res.status(403).json({
+        error: 'User is not verified. A new verification code has been sent to your email.',
+        userId: user._id,
+      });
       return;
     }
 
     const token = jwt.sign(
       { userId: user._id, email: user.email },
-      process.env.JWT_SECRET || 'your_jwt_secret', // Use a secure secret in production
+      process.env.JWT_SECRET || 'your_jwt_secret',
       { expiresIn: '1h' }
     );
 
-    res.status(200).json({ message: 'Login successful', token });
+    res.status(200).json({ message: 'Login successful', token, user });
   } catch (error) {
     console.error('Error logging in user:', error);
     res.status(500).json({ error: 'Internal server error' });
